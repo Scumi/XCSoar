@@ -123,7 +123,7 @@ AirspaceWarningMonitor::Check() noexcept
     return;
   }
 
-  if (!HasPointer()) {
+  if (HasPointer()) {
     /* "classic" list-only view for devices without touch screen */
 
     if (dlgAirspaceWarningVisible())
