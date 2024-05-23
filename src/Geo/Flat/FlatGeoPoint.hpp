@@ -69,7 +69,11 @@ struct FlatGeoPoint : IntPoint2D {
     return ::DotProduct(*this, other);
   }
 
-  constexpr bool operator==(const FlatGeoPoint &) const noexcept = default;
+  constexpr
+  bool operator==(const FlatGeoPoint &other) const noexcept {
+    return IntPoint2D::operator==(other);
+  };
+  constexpr bool operator!=(const FlatGeoPoint &) const noexcept = default;
 
   [[gnu::pure]]
   bool Sort(const FlatGeoPoint& sp) const noexcept {
