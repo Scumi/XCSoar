@@ -19,8 +19,19 @@ struct FlarmHardware {
   NarrowString<64> capabilities;
   FlarmId radio_id;
 
+  // Known device_type strings reported by PowerFLARM-class hardware
+  static constexpr const char *kPowerFlarmNames[] = {
+    "PowerFLARM", // FLARM Technology AG
+    "PowerMouse", // LXNAV
+  };
+
   bool isPowerFlarm() noexcept {
-    return device_type.Contains("PowerFLARM");
+    for (const auto *name : kPowerFlarmNames) {
+      if (device_type.Contains(name))
+        return true;
+    }
+
+    return false;
   }
 
   bool hasADSB() noexcept {
