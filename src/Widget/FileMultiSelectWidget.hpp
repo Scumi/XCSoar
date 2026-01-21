@@ -5,7 +5,9 @@
 
 #include "MultiSelectListWidget.hpp"
 #include "Form/DataField/MultiFile.hpp"
+#include "Renderer/TwoTextRowsRenderer.hpp"
 #include "Renderer/TextRowRenderer.hpp"
+#include <functional>
 #include "system/Path.hpp"
 
 #include <vector>
@@ -24,12 +26,21 @@ public:
     Path path;
   };
 
+  using TextProvider = std::function<const TCHAR*(const FileItem&)>;
+
   FileMultiSelectWidget(MultiFileDataField &df,
-                        const TCHAR *caption = nullptr,
-                        const TCHAR *help_text = nullptr) noexcept
-    : df_(df), caption_(caption), help_text_(help_text) {}
+                        TextProvider first_left_provider,
+                        const TCHAR *caption,
+                        const TCHAR *help_text) noexcept
+    : df_(df), first_left_provider_(std::move(first_left_provider)),
+      caption_(caption), help_text_(help_text) {}
 
   void ShowHelp() noexcept;
+
+  /* Provider setters for optional rendering text */
+  void SetFirstRightProvider(TextProvider p) noexcept { first_right_provider_ = std::move(p); }
+  void SetSecondLeftProvider(TextProvider p) noexcept { second_left_provider_ = std::move(p); }
+  void SetSecondRightProvider(TextProvider p) noexcept { second_right_provider_ = std::move(p); }
 
   [[nodiscard]]
   std::vector<Path> GetSelectedPaths() const noexcept;
@@ -45,7 +56,15 @@ public:
 private:
   std::vector<FileItem> items_;
   MultiFileDataField &df_;
-  TextRowRenderer row_renderer_;
+  TwoTextRowsRenderer two_text_rows_renderer_;
+  TextRowRenderer text_row_renderer_;
+
+  TextProvider first_left_provider_;
+  TextProvider first_right_provider_;
+  TextProvider second_left_provider_;
+  TextProvider second_right_provider_;
+
+  bool use_two_rows_ = false;
   bool refreshed_ = false;
   const TCHAR *caption_ = nullptr;
   const TCHAR *help_text_ = nullptr;
