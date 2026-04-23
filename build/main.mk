@@ -130,6 +130,7 @@ DIALOG_SOURCES = \
 	$(SRC)/Dialogs/Settings/Panels/WaypointDisplayConfigPanel.cpp \
 	$(SRC)/Dialogs/Settings/Panels/WeatherConfigPanel.cpp \
 	$(SRC)/Dialogs/Settings/Panels/WeGlideConfigPanel.cpp \
+	$(SRC)/Dialogs/Settings/Panels/NetworkConfigPanel.cpp \
 	\
 	$(SRC)/Dialogs/Task/Widgets/ObservationZoneEditWidget.cpp \
 	$(SRC)/Dialogs/Task/Widgets/CylinderZoneEditWidget.cpp \
@@ -701,6 +702,8 @@ endif
 ifeq ($(HAVE_PCM_PLAYER),y)
 XCSOAR_SOURCES += $(SRC)/Audio/VarioGlue.cpp
 endif
+
+include $(topdir)/build/net-wifi.mk
 
 XCSOAR_DEPENDS = \
 	FMT \
