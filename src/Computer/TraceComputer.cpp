@@ -122,6 +122,8 @@ TraceComputer::CopyMergeVarioSamplesUnlocked(
       continue;
 
     bool duplicate = false;
+    /* Only need to compare vario values here; the loop is already limited
+       to archived samples with the same timestamp as the candidate. */
     for (auto it = vario_samples.rbegin();
          it != vario_samples.rend() && it->time == s.time; ++it) {
       if (it->vario == s.vario) {
