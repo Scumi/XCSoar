@@ -103,7 +103,6 @@ class TrailRenderer {
   Serial cache_modify_serial;
   TrailDrawFingerprint fingerprint{};
   TrailSettings::Type cached_settings_type{};
-  bool cached_scaled_trail{};
   size_t cached_trace_size{};
   size_t merge_sample_search_index{};
   /** Keep completed-segment drift stable between GPS trace updates. */
@@ -170,8 +169,6 @@ public:
 private:
   void SelectTrailPen(Canvas &canvas, unsigned color_index,
                       bool scaled_trail) const noexcept;
-
-  void PrepareCopy(const PixelPoint *src, unsigned n) noexcept;
 
   void DrawColourPolyline(Canvas &canvas, unsigned color_index,
                           TrailSettings::Type type,

@@ -1058,9 +1058,7 @@ TrailRenderer::Draw(Canvas &canvas, const TraceComputer &trace_computer,
   };
 
   const bool fingerprint_changed = !(fingerprint == new_fingerprint);
-  const bool settings_changed =
-    cached_settings_type != settings.type ||
-    cached_scaled_trail != scaled_trail;
+  const bool settings_changed = cached_settings_type != settings.type;
 
   if (modify_changed || fingerprint_changed || settings_changed)
     UpdateSegmentCache(projection, settings.type, color_scale,
@@ -1084,7 +1082,6 @@ TrailRenderer::Draw(Canvas &canvas, const TraceComputer &trace_computer,
   cache_modify_serial = synced_modify_serial;
   fingerprint = new_fingerprint;
   cached_settings_type = settings.type;
-  cached_scaled_trail = scaled_trail;
 
   for (size_t i = 1; i < valid_points.size(); ++i) {
     const auto &curr_data = valid_points[i];
@@ -1154,12 +1151,6 @@ TrailRenderer::SelectTrailPen(Canvas &canvas, unsigned color_index,
     canvas.Select(look.scaled_trail_pens[color_index]);
   else
     canvas.Select(look.trail_pens[color_index]);
-}
-
-void
-TrailRenderer::PrepareCopy(const PixelPoint *src, unsigned n) noexcept
-{
-  std::copy_n(src, n, Prepare(n));
 }
 
 void
