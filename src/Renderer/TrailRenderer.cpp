@@ -12,6 +12,7 @@
 #include "Geo/Math.hpp"
 #include "Geo/GeoBounds.hpp"
 #include "Engine/Contest/ContestTrace.hpp"
+#include "Screen/Layout.hpp"
 
 #include <algorithm>
 #include <new>
@@ -256,6 +257,52 @@ static PixelPoint
 RoundRibbonPoint(double x, double y) noexcept
 {
   return {int(std::lround(x)), int(std::lround(y))};
+}
+
+[[gnu::pure]]
+static bool
+IsLowDpiTrail() noexcept
+{
+  return Layout::min_screen_pixels <= TrailLook::LOW_DPI_TRAIL_SCREEN_PX;
+}
+
+static void
+AppendFilteredTrailPoint(BulkPixelPoint *buffer, unsigned &n,
+                         PixelPoint pt, bool simplify) noexcept
+{
+  if (n > 0 && pt.x == buffer[n - 1].x && pt.y == buffer[n - 1].y)
+    return;
+
+  if (simplify && n >= 2) {
+    const auto &a = buffer[n - 2];
+    const auto &b = buffer[n - 1];
+
+    if (std::abs(pt.x - a.x) <= 1 && std::abs(pt.y - a.y) <= 1) {
+      buffer[n - 1] = pt;
+      return;
+    }
+
+    if ((a.x == b.x && b.x == pt.x) || (a.y == b.y && b.y == pt.y)) {
+      buffer[n - 1] = pt;
+      return;
+    }
+  }
+
+  buffer[n++] = pt;
+}
+
+[[gnu::pure]]
+static double
+GetRibbonWidth(const TrailLook &look, unsigned color_index) noexcept
+{
+  const unsigned min_width = look.trail_widths[0];
+  const unsigned width = look.trail_widths[color_index];
+
+  if (width <= min_width)
+    return min_width;
+
+  const double extra_factor = IsLowDpiTrail() ? 0.5 : 1.0;
+  return min_width + (width - min_width) * extra_factor;
 }
 
 [[gnu::pure]]
@@ -542,6 +589,7 @@ TrailRenderer::DrawCachedSegments(Canvas &canvas,
 {
   const bool suppress_sink_lines = IsVarioDotsOnlyMode(type);
   const bool use_ribbon = UseRibbonTrail(type, scaled_trail);
+  const bool simplify_projected = IsLowDpiTrail() && use_ribbon;
   static constexpr unsigned null_color_index =
     TrailLook::NUMSNAILCOLORS / 2;
 
@@ -556,10 +604,12 @@ TrailRenderer::DrawCachedSegments(Canvas &canvas,
 
         auto *dst = Prepare(run.points.size());
         unsigned n = 0;
-        for (const auto &p : run.points)
-          dst[n++] = projection.GeoToScreen(
+        for (const auto &p : run.points) {
+          const PixelPoint pt = projection.GeoToScreen(
             DriftGeoPoint(p.geo, p.time, p.drift_factor,
                           enable_traildrift, traildrift, drift_now));
+          AppendFilteredTrailPoint(dst, n, pt, simplify_projected);
+        }
 
         DrawRibbonPolyline(canvas, run.color_index, dst, n);
       }
@@ -636,7 +686,8 @@ TrailRenderer::DrawCachedSegments(Canvas &canvas,
           DriftGeoPoint(p.geo, p.time, p.drift_factor,
                         enable_traildrift, traildrift, drift_now));
 
-        points[batch_n++] = pt;
+        AppendFilteredTrailPoint(points.data(), batch_n, pt,
+                                 simplify_projected);
       }
     }
   }
@@ -1125,15 +1176,23 @@ TrailRenderer::DrawColourPolyline(Canvas &canvas, unsigned color_index,
   if (n < 2)
     return;
 
-  PrepareCopy(pts.data() + first, n);
+  const bool simplify_projected = IsLowDpiTrail() &&
+    (UseRibbonTrail(type, scaled_trail) || !scaled_trail);
+  auto *dst = Prepare(n);
+  unsigned filtered_n = 0;
+  for (size_t i = first; i <= last; ++i)
+    AppendFilteredTrailPoint(dst, filtered_n, pts[i], simplify_projected);
+
+  if (filtered_n < 2)
+    return;
 
   if (UseRibbonTrail(type, scaled_trail)) {
-    DrawRibbonPolyline(canvas, color_index, points.data(), n);
+    DrawRibbonPolyline(canvas, color_index, dst, filtered_n);
     return;
   }
 
   SelectTrailPen(canvas, color_index, scaled_trail);
-  DrawPreparedPolyline(canvas, n);
+  DrawPreparedPolyline(canvas, filtered_n);
 }
 
 void
@@ -1145,7 +1204,7 @@ TrailRenderer::DrawRibbonPolyline(Canvas &canvas, unsigned color_index,
     return;
 
   const double half_width =
-    std::max(1u, look.trail_widths[color_index]) * 0.5;
+    std::max(1., GetRibbonWidth(look, color_index) * 0.5);
   const unsigned join_radius = unsigned(std::ceil(half_width));
 
   canvas.SelectNullPen();
