@@ -208,42 +208,14 @@ GetTrailThinDistance(const WindowProjection &projection,
   return projection.DistancePixelsToMeters(GetTrailSpacingPixels(map_scale));
 }
 
-/**
- * Bounded Catmull-Rom smoothing budget and recent trail tail.
- * Stefan Schumann, PR #2664.
- */
+/** Max number of recent trace points that receive Catmull-Rom smoothing. */
 static constexpr size_t MAX_SMOOTHED_TRAIL_POINTS = 180;
 
-[[gnu::const]]
-static unsigned
-GetBaseSmoothingSegments(const WindowProjection &projection) noexcept
-{
-  const double map_scale = projection.GetMapScale();
-  return map_scale <= 3000 ? 4 : map_scale <= TRAIL_ZOOMED_OUT_MAP_SCALE ? 3 : 2;
-}
-
-[[gnu::const]]
-static unsigned
-GetPreferredSmoothingSegments(const WindowProjection &projection) noexcept
-{
-  const double map_scale = projection.GetMapScale();
-  return map_scale <= 3000 ? 8 : map_scale <= TRAIL_ZOOMED_OUT_MAP_SCALE ? 6 : 4;
-}
-
-[[gnu::const]]
-static unsigned
-GetSmoothingSegments(const WindowProjection &projection,
-                     size_t point_count) noexcept
-{
-  const unsigned base = GetBaseSmoothingSegments(projection);
-  if (point_count <= 1)
-    return base;
-
-  const unsigned budget = (MAX_SMOOTHED_TRAIL_POINTS - 1) * base;
-  const unsigned allowed = std::max(base,
-                                    budget / (unsigned)(point_count - 1));
-  return std::min(GetPreferredSmoothingSegments(projection), allowed);
-}
+/**
+ * Fixed Catmull-Rom sub-divisions per GPS leg in the smoothed tail.
+ * Constant across zoom levels for visual consistency and bounded cost.
+ */
+static constexpr unsigned TRAIL_SMOOTH_SEGMENTS = 4;
 
 [[gnu::const]]
 static size_t
@@ -252,6 +224,16 @@ GetFirstSmoothedPointIndex(size_t point_count) noexcept
   return point_count > MAX_SMOOTHED_TRAIL_POINTS
     ? point_count - MAX_SMOOTHED_TRAIL_POINTS
     : 0;
+}
+
+[[gnu::pure]]
+static bool
+UseTrailSmoothing(TrailSettings::Type type, double map_scale) noexcept
+{
+  if (IsVarioDotsOnlyMode(type) || map_scale > TRAIL_ZOOMED_OUT_MAP_SCALE)
+    return false;
+
+  return true;
 }
 
 [[gnu::pure]]
@@ -971,14 +953,11 @@ TrailRenderer::Draw(Canvas &canvas, const TraceComputer &trace_computer,
   const ColorScale color_scale =
     ColorScale::FromMinMax(settings.type, minmax.first, minmax.second);
 
-  const bool zoomed_in =
-    projection.GetMapScale() <= TRAIL_ZOOMED_OUT_MAP_SCALE;
+  const double map_scale = projection.GetMapScale();
+  const bool zoomed_in = map_scale <= TRAIL_ZOOMED_OUT_MAP_SCALE;
   const bool scaled_trail = settings.scaling_enabled && zoomed_in;
 
-  const bool use_smoothing =
-    settings.type != TrailSettings::Type::VARIO_1_DOTS &&
-    settings.type != TrailSettings::Type::VARIO_2_DOTS &&
-    zoomed_in;
+  const bool use_smoothing = UseTrailSmoothing(settings.type, map_scale);
 
   const bool append_changed =
     synced_append_serial != cache_append_serial;
@@ -1008,12 +987,7 @@ TrailRenderer::Draw(Canvas &canvas, const TraceComputer &trace_computer,
   const size_t first_smoothed_point =
     use_smoothing ? GetFirstSmoothedPointIndex(valid_points.size())
                   : valid_points.size();
-  const size_t smoothed_point_count =
-    valid_points.size() - first_smoothed_point;
-  const unsigned num_segments =
-    use_smoothing
-      ? GetSmoothingSegments(projection, smoothed_point_count)
-      : 0u;
+  const unsigned num_segments = use_smoothing ? TRAIL_SMOOTH_SEGMENTS : 0u;
 
   const TrailDrawFingerprint new_fingerprint{
     projection.GetScale(),
