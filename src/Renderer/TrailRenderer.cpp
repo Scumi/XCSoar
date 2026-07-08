@@ -204,7 +204,7 @@ ComputeCatmullRomWeights(double t) noexcept
 static int
 GetTrailSpacingPixels(double map_scale) noexcept
 {
-  return std::clamp(int(map_scale / 500),
+  return std::clamp(static_cast<int>(map_scale / 500),
                     TRAIL_THIN_PIXELS_MIN,
                     TRAIL_THIN_PIXELS_MAX);
 }
