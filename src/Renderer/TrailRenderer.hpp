@@ -174,9 +174,13 @@ private:
   void PrepareCopy(const PixelPoint *src, unsigned n) noexcept;
 
   void DrawColourPolyline(Canvas &canvas, unsigned color_index,
+                          TrailSettings::Type type,
                           bool scaled_trail,
                           const std::vector<PixelPoint> &pts,
                           size_t first, size_t last) noexcept;
+
+  void DrawRibbonPolyline(Canvas &canvas, unsigned color_index,
+                          const BulkPixelPoint *pts, unsigned n) noexcept;
 
   void DrawCachedSegments(Canvas &canvas,
                           const WindowProjection &projection,

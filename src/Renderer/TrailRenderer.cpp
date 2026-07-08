@@ -148,6 +148,14 @@ IsVarioDotsOnlyMode(TrailSettings::Type type) noexcept
     type == TrailSettings::Type::VARIO_2_DOTS;
 }
 
+[[gnu::const]]
+static bool
+IsVarioLineMode(TrailSettings::Type type) noexcept
+{
+  return type == TrailSettings::Type::VARIO_1 ||
+    type == TrailSettings::Type::VARIO_2;
+}
+
 [[gnu::pure]]
 static double
 InterpolatePieceValue(TrailSettings::Type type,
@@ -234,6 +242,20 @@ UseTrailSmoothing(TrailSettings::Type type, double map_scale) noexcept
     return false;
 
   return true;
+}
+
+[[gnu::const]]
+static bool
+UseRibbonTrail(TrailSettings::Type type, bool scaled_trail) noexcept
+{
+  return scaled_trail && IsVarioLineMode(type);
+}
+
+[[gnu::const]]
+static PixelPoint
+RoundRibbonPoint(double x, double y) noexcept
+{
+  return {int(std::lround(x)), int(std::lround(y))};
 }
 
 [[gnu::pure]]
@@ -519,10 +541,11 @@ TrailRenderer::DrawCachedSegments(Canvas &canvas,
                                   const std::vector<CachedTrailSegment> &segments) noexcept
 {
   const bool suppress_sink_lines = IsVarioDotsOnlyMode(type);
+  const bool use_ribbon = UseRibbonTrail(type, scaled_trail);
   static constexpr unsigned null_color_index =
     TrailLook::NUMSNAILCOLORS / 2;
 
-  if (scaled_trail) {
+  if (use_ribbon) {
     for (const auto &seg : segments) {
       for (const auto &run : seg.colour_runs) {
         if (run.points.size() < 2)
@@ -531,27 +554,14 @@ TrailRenderer::DrawCachedSegments(Canvas &canvas,
         if (suppress_sink_lines && run.color_index < null_color_index)
           continue;
 
-        SelectTrailPen(canvas, run.color_index, true);
-
-        bool have_prev = false;
-        PixelPoint prev_pt;
-        for (const auto &p : run.points) {
-          const PixelPoint pt = projection.GeoToScreen(
+        auto *dst = Prepare(run.points.size());
+        unsigned n = 0;
+        for (const auto &p : run.points)
+          dst[n++] = projection.GeoToScreen(
             DriftGeoPoint(p.geo, p.time, p.drift_factor,
                           enable_traildrift, traildrift, drift_now));
 
-          if (!have_prev) {
-            prev_pt = pt;
-            have_prev = true;
-            continue;
-          }
-
-          if (pt == prev_pt)
-            continue;
-
-          canvas.DrawLinePiece(prev_pt, pt);
-          prev_pt = pt;
-        }
+        DrawRibbonPolyline(canvas, run.color_index, dst, n);
       }
     }
 
@@ -1103,9 +1113,10 @@ TrailRenderer::PrepareCopy(const PixelPoint *src, unsigned n) noexcept
 
 void
 TrailRenderer::DrawColourPolyline(Canvas &canvas, unsigned color_index,
-                                   bool scaled_trail,
-                                   const std::vector<PixelPoint> &pts,
-                                   size_t first, size_t last) noexcept
+                                  TrailSettings::Type type,
+                                  bool scaled_trail,
+                                  const std::vector<PixelPoint> &pts,
+                                  size_t first, size_t last) noexcept
 {
   assert(first <= last);
   assert(last < pts.size());
@@ -1115,8 +1126,64 @@ TrailRenderer::DrawColourPolyline(Canvas &canvas, unsigned color_index,
     return;
 
   PrepareCopy(pts.data() + first, n);
+
+  if (UseRibbonTrail(type, scaled_trail)) {
+    DrawRibbonPolyline(canvas, color_index, points.data(), n);
+    return;
+  }
+
   SelectTrailPen(canvas, color_index, scaled_trail);
   DrawPreparedPolyline(canvas, n);
+}
+
+void
+TrailRenderer::DrawRibbonPolyline(Canvas &canvas, unsigned color_index,
+                                  const BulkPixelPoint *pts,
+                                  unsigned n) noexcept
+{
+  if (n < 2)
+    return;
+
+  const double half_width =
+    std::max(1u, look.trail_widths[color_index]) * 0.5;
+  const unsigned join_radius = unsigned(std::ceil(half_width));
+
+  canvas.SelectNullPen();
+  canvas.Select(look.trail_brushes[color_index]);
+
+  for (unsigned i = 0; i + 1 < n; ++i) {
+    const auto &a = pts[i];
+    const auto &b = pts[i + 1];
+    const double dx = double(b.x - a.x);
+    const double dy = double(b.y - a.y);
+    const double length = std::hypot(dx, dy);
+    if (length <= 0.)
+      continue;
+
+    const double ux = dx / length;
+    const double uy = dy / length;
+    const double nx = -uy * half_width;
+    const double ny = ux * half_width;
+    const double overlap = 0.5;
+    const double ax = double(a.x) - ux * overlap;
+    const double ay = double(a.y) - uy * overlap;
+    const double bx = double(b.x) + ux * overlap;
+    const double by = double(b.y) + uy * overlap;
+
+    BulkPixelPoint polygon[4] = {
+      RoundRibbonPoint(ax + nx, ay + ny),
+      RoundRibbonPoint(ax - nx, ay - ny),
+      RoundRibbonPoint(bx - nx, by - ny),
+      RoundRibbonPoint(bx + nx, by + ny),
+    };
+
+    canvas.DrawPolygon(polygon, 4);
+  }
+
+  if (join_radius > 1) {
+    for (unsigned i = 1; i + 1 < n; ++i)
+      canvas.DrawCircle(pts[i], join_radius);
+  }
 }
 
 void
@@ -1142,7 +1209,7 @@ TrailRenderer::DrawVarioColouredPolyline(Canvas &canvas,
   auto flush_colour_run = [&](size_t run_end) {
     if (!run_active || run_end <= run_start)
       return;
-    DrawColourPolyline(canvas, run_color, scaled_trail,
+    DrawColourPolyline(canvas, run_color, type, scaled_trail,
                        pts, run_start, run_end);
   };
 
