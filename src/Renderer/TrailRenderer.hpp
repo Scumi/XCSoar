@@ -106,6 +106,8 @@ class TrailRenderer {
   bool cached_scaled_trail{};
   size_t cached_trace_size{};
   size_t merge_sample_search_index{};
+  /** Keep completed-segment drift stable between GPS trace updates. */
+  TimeStamp stable_drift_time{TimeStamp::Undefined()};
 
 public:
   TrailRenderer(const TrailLook &_look) noexcept:look(_look) {}
@@ -182,7 +184,7 @@ private:
                           bool scaled_trail,
                           bool enable_traildrift,
                           const GeoPoint &traildrift,
-                          const NMEAInfo &basic,
+                          TimeStamp drift_now,
                           const std::vector<CachedTrailSegment> &segments) noexcept;
 
   void DrawVarioColouredPolyline(Canvas &canvas,

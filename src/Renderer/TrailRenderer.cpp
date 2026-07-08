@@ -303,13 +303,13 @@ CatmullRomInterpolate(const PixelPoint &p0, const PixelPoint &p1,
 static GeoPoint
 TrailGeoPoint(const TracePoint &tp, bool enable_traildrift,
               const GeoPoint &traildrift,
-              const NMEAInfo &basic) noexcept
+              TimeStamp now) noexcept
 {
   if (!enable_traildrift)
     return tp.GetLocation();
 
   return tp.GetLocation().Parametric(traildrift,
-                                     tp.CalculateDrift(basic.time));
+                                     tp.CalculateDrift(now));
 }
 
 [[gnu::pure]]
@@ -533,7 +533,7 @@ TrailRenderer::DrawCachedSegments(Canvas &canvas,
                                   const bool scaled_trail,
                                   const bool enable_traildrift,
                                   const GeoPoint &traildrift,
-                                  const NMEAInfo &basic,
+                                  const TimeStamp drift_now,
                                   const std::vector<CachedTrailSegment> &segments) noexcept
 {
   const bool suppress_sink_lines = IsVarioDotsOnlyMode(type);
@@ -556,7 +556,7 @@ TrailRenderer::DrawCachedSegments(Canvas &canvas,
         for (const auto &p : run.points) {
           const PixelPoint pt = projection.GeoToScreen(
             DriftGeoPoint(p.geo, p.time, p.drift_factor,
-                          enable_traildrift, traildrift, basic.time));
+                          enable_traildrift, traildrift, drift_now));
 
           if (!have_prev) {
             prev_pt = pt;
@@ -632,7 +632,7 @@ TrailRenderer::DrawCachedSegments(Canvas &canvas,
         const PixelPoint junction = projection.GeoToScreen(
           DriftGeoPoint(junction_pt.geo, junction_pt.time,
                         junction_pt.drift_factor,
-                        enable_traildrift, traildrift, basic.time));
+                        enable_traildrift, traildrift, drift_now));
         if (junction.x == points[batch_n - 1].x &&
             junction.y == points[batch_n - 1].y)
           start = 1;
@@ -642,7 +642,7 @@ TrailRenderer::DrawCachedSegments(Canvas &canvas,
         const auto &p = run.points[i];
         const PixelPoint pt = projection.GeoToScreen(
           DriftGeoPoint(p.geo, p.time, p.drift_factor,
-                        enable_traildrift, traildrift, basic.time));
+                        enable_traildrift, traildrift, drift_now));
 
         points[batch_n++] = pt;
       }
@@ -980,11 +980,22 @@ TrailRenderer::Draw(Canvas &canvas, const TraceComputer &trace_computer,
     settings.type != TrailSettings::Type::VARIO_2_DOTS &&
     zoomed_in;
 
+  const bool append_changed =
+    synced_append_serial != cache_append_serial;
+  const bool modify_changed =
+    synced_modify_serial != cache_modify_serial;
+  const size_t leg_count = trace.size() >= 2 ? trace.size() - 1 : 0;
+
+  if (!stable_drift_time.IsDefined() || append_changed || modify_changed ||
+      leg_count > segment_cache.size())
+    stable_drift_time = basic.time;
+
   valid_points.clear();
   valid_points.reserve(trace.size());
 
   for (const auto &i : trace) {
-    const GeoPoint gp = TrailGeoPoint(i, enable_traildrift, traildrift, basic);
+    const GeoPoint gp = TrailGeoPoint(i, enable_traildrift, traildrift,
+                                      stable_drift_time);
     const PixelPoint pt = projection.GeoToScreen(gp);
     const double value = (settings.type == TrailSettings::Type::ALTITUDE)
       ? i.GetAltitude() : i.GetVario();
@@ -1011,14 +1022,10 @@ TrailRenderer::Draw(Canvas &canvas, const TraceComputer &trace_computer,
     minmax.second,
   };
 
-  const bool modify_changed =
-    synced_modify_serial != cache_modify_serial;
   const bool fingerprint_changed = !(fingerprint == new_fingerprint);
   const bool settings_changed =
     cached_settings_type != settings.type ||
     cached_scaled_trail != scaled_trail;
-
-  const size_t leg_count = trace.size() >= 2 ? trace.size() - 1 : 0;
 
   if (modify_changed || fingerprint_changed || settings_changed)
     UpdateSegmentCache(projection, settings.type, color_scale,
@@ -1074,7 +1081,8 @@ TrailRenderer::Draw(Canvas &canvas, const TraceComputer &trace_computer,
   }
 
   DrawCachedSegments(canvas, projection, settings.type, scaled_trail,
-                     enable_traildrift, traildrift, basic, segment_cache);
+                     enable_traildrift, traildrift, stable_drift_time,
+                     segment_cache);
   DrawOpenLeg(canvas, settings, color_scale, scaled_trail,
               use_smoothing, num_segments, first_smoothed_point,
               basic, pos);
